@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.RegularExpressions;
 using Frapper.Core.Domain.Plan;
 using Frapper.Core.Domain.Plan.Ops;
 using Frapper.Core.Domain.Schema;
@@ -7,6 +8,11 @@ namespace Frapper.EFMigrationEmitter;
 
 public static class SqlMigrationEmitter
 {
+    private static readonly Regex ValidSqlIdentifierRegex = new(
+        @"^[a-zA-Z_@#][a-zA-Z0-9_@#$]*$",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant,
+        TimeSpan.FromMilliseconds(100));
+
     public static string Emit(MigrationPlan plan)
     {
         var sb = new StringBuilder();
@@ -114,6 +120,10 @@ public static class SqlMigrationEmitter
         var columnName = Bracket(op.Column);
 
         sb.AppendLine("DECLARE @df_name sysname;");
+        sb.AppendLine("DECLARE @schema_name sysname = @schema_param;");
+        sb.AppendLine("DECLARE @table_name sysname = @table_param;");
+        sb.AppendLine("DECLARE @column_name sysname = @column_param;");
+        sb.AppendLine();
         sb.AppendLine("SELECT @df_name = dc.name");
         sb.AppendLine("FROM sys.default_constraints dc");
         sb.AppendLine("INNER JOIN sys.columns c");
@@ -123,16 +133,22 @@ public static class SqlMigrationEmitter
         sb.AppendLine("    ON t.object_id = c.object_id");
         sb.AppendLine("INNER JOIN sys.schemas s");
         sb.AppendLine("    ON s.schema_id = t.schema_id");
-        sb.AppendLine($"WHERE s.name = '{EscapeSqlLiteral(op.Schema)}'");
-        sb.AppendLine($"  AND t.name = '{EscapeSqlLiteral(op.Table)}'");
-        sb.AppendLine($"  AND c.name = '{EscapeSqlLiteral(op.Column)}';");
+        sb.AppendLine("WHERE s.name = @schema_name");
+        sb.AppendLine("  AND t.name = @table_name");
+        sb.AppendLine("  AND c.name = @column_name;");
         sb.AppendLine();
 
         sb.AppendLine("IF @df_name IS NOT NULL");
-        sb.AppendLine($"    EXEC('ALTER TABLE {tableName} DROP CONSTRAINT [' + @df_name + ']');");
+        sb.AppendLine($"    EXEC sp_executesql N'ALTER TABLE {tableName} DROP CONSTRAINT [' + QUOTENAME(@df_name) + ']';");
         sb.AppendLine();
 
         sb.AppendLine($"ALTER TABLE {tableName} DROP COLUMN {columnName};");
+        sb.AppendLine();
+        
+        sb.AppendLine("-- Note: Execute this script with parameters:");
+        sb.AppendLine($"-- @schema_param = '{EscapeSqlLiteral(op.Schema)}'");
+        sb.AppendLine($"-- @table_param = '{EscapeSqlLiteral(op.Table)}'");
+        sb.AppendLine($"-- @column_param = '{EscapeSqlLiteral(op.Column)}'");
         sb.AppendLine();
     }
 
@@ -198,9 +214,42 @@ public static class SqlMigrationEmitter
     private static string FullColumnName(string schema, string table, string column)
         => $"{Bracket(schema)}.{Bracket(table)}.{Bracket(column)}";
 
+    /// <summary>
+    /// Escapa un identificador SQL (tabla, columna, schema) usando corchetes.
+    /// Valida que el identificador sea válido según las reglas de SQL Server.
+    /// </summary>
     private static string Bracket(string value)
-        => $"[{value}]";
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            throw new ArgumentException("SQL identifier cannot be null or whitespace.", nameof(value));
 
+        if (value.Length > 128)
+            throw new ArgumentException($"SQL identifier too long (max 128 chars): {value}", nameof(value));
+
+        // Validar que sea un identificador válido de SQL Server
+        if (!ValidSqlIdentifierRegex.IsMatch(value))
+        {
+            throw new ArgumentException(
+                $"Invalid SQL identifier '{value}'. Must start with letter, @, #, or _ and contain only alphanumeric characters, @, #, $, or _.",
+                nameof(value));
+        }
+
+        // Escapar corchetes internos duplicándolos (regla de SQL Server)
+        var escaped = value.Replace("]", "]]");
+        
+        return $"[{escaped}]";
+    }
+
+    /// <summary>
+    /// Escapa un literal SQL para uso en cadenas entre comillas simples.
+    /// Duplica las comillas simples según el estándar SQL.
+    /// </summary>
     private static string EscapeSqlLiteral(string value)
-        => value.Replace("'", "''");
+    {
+        if (value == null)
+            throw new ArgumentNullException(nameof(value));
+
+        // Escapar comillas simples duplicándolas
+        return value.Replace("'", "''");
+    }
 }

@@ -38,7 +38,7 @@ internal static class DiffCommand
 
         command.SetAction(async (parseResult, cancellationToken) =>
         {
-            var projectFile = new FrapperProjectFileLoader().LoadOrThrow();
+            var projectFile = await new FrapperProjectFileLoader().LoadOrThrowAsync();
 
             var basePath = parseResult.GetValue(BaseOption) ?? projectFile.BaseSnapshot;
             var targetPath = parseResult.GetValue(TargetOption);

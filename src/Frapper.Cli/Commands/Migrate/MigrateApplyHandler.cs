@@ -48,10 +48,19 @@ internal sealed class MigrateApplyHandler
             var appliedMigrationIds = await _migrationRunner.GetAppliedMigrationIdsAsync(connectionString, cancellationToken);
             var appliedMigrationSet = appliedMigrationIds.ToHashSet(StringComparer.OrdinalIgnoreCase);
 
+            const int MaxMigrationsPerBatch = 1000;
+            const long MaxSqlFileSize = 100 * 1024 * 1024; // 100MB
+
             var migrationFiles = Directory
-                .GetFiles(migrationsDirectory, "*.sql", SearchOption.TopDirectoryOnly)
+                .EnumerateFiles(migrationsDirectory, "*.sql", SearchOption.TopDirectoryOnly)
                 .OrderBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase)
+                .Take(MaxMigrationsPerBatch)
                 .ToArray();
+
+            if (migrationFiles.Length == MaxMigrationsPerBatch)
+            {
+                Console.WriteLine($"ADVERTENCIA: Se encontraron más de {MaxMigrationsPerBatch} migraciones. Solo se procesarán las primeras {MaxMigrationsPerBatch}.");
+            }
 
             if (migrationFiles.Length == 0)
             {
@@ -71,6 +80,17 @@ internal sealed class MigrateApplyHandler
 
             foreach (var file in pendingFiles)
             {
+                cancellationToken.ThrowIfCancellationRequested();
+                
+                var fileInfo = new FileInfo(file);
+                
+                if (fileInfo.Length > MaxSqlFileSize)
+                {
+                    await Console.Error.WriteLineAsync(
+                        $"Error: El archivo de migración '{Path.GetFileName(file)}' es demasiado grande ({fileInfo.Length / (1024 * 1024)}MB). Máximo permitido: {MaxSqlFileSize / (1024 * 1024)}MB");
+                    return 1;
+                }
+                
                 var migrationId = Path.GetFileName(file);
                 var sql = await File.ReadAllTextAsync(file, cancellationToken);
 
@@ -90,7 +110,6 @@ internal sealed class MigrateApplyHandler
         catch (Exception ex)
         {
             await Console.Error.WriteLineAsync("Error: migrate apply failed.");
-            await Console.Error.WriteLineAsync(ex.Message);
             return 1;
         }
     }

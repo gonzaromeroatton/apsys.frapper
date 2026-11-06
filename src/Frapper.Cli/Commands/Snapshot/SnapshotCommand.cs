@@ -38,7 +38,7 @@ internal static class SnapshotCommand
 
         command.SetAction(async (parseResult, cancellationToken) =>
         {
-            var projectFile = new FrapperProjectFileLoader().LoadOrThrow();
+            var projectFile = await new FrapperProjectFileLoader().LoadOrThrowAsync();
 
             var rawConnection = parseResult.GetValue(ConnectionOption) ?? projectFile.Connection;
             var outPath = parseResult.GetValue(OutOption) ?? projectFile.Snapshot;

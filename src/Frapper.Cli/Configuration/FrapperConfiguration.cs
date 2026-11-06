@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Configuration;
+using Microsoft.Data.SqlClient;
 
 namespace Frapper.Cli.Configuration;
 
@@ -39,7 +40,7 @@ internal sealed class FrapperConfiguration
         if (string.IsNullOrWhiteSpace(resolved))
         {
             throw new InvalidOperationException(
-                $"Could not resolve connection '{input}'. Provide a full connection string, a logical name, or a full configuration key.");
+                "Could not resolve connection. Provide a valid connection string or configuration key.");
         }
 
         return resolved;
@@ -47,6 +48,14 @@ internal sealed class FrapperConfiguration
 
     private static bool LooksLikeRawConnectionString(string value)
     {
-        return value.Contains('=') && value.Contains(';');
+        try
+        {
+            var builder = new SqlConnectionStringBuilder(value);
+            return !string.IsNullOrEmpty(builder.DataSource);
+        }
+        catch
+        {
+            return false;
+        }
     }
 }

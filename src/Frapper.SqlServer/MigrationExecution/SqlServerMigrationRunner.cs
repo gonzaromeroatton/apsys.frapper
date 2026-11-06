@@ -1,5 +1,6 @@
 using Frapper.Core.Abstractions;
 using Microsoft.Data.SqlClient;
+using System.Data;
 
 namespace Frapper.SqlServer.MigrationExecution;
 
@@ -23,8 +24,11 @@ public sealed class SqlServerMigrationRunner : IMigrationRunner
         await using var connection = new SqlConnection(connectionString);
         await connection.OpenAsync(cancellationToken);
 
-        await using var command = new SqlCommand(sql, connection);
-        await command.ExecuteNonQueryAsync(cancellationToken);
+        await using var cmd = new SqlCommand(sql, connection)
+        {
+            CommandTimeout = 30 // segundos
+        };
+        await cmd.ExecuteNonQueryAsync(cancellationToken);
     }
 
     public async Task<IReadOnlyList<string>> GetAppliedMigrationIdsAsync(
@@ -42,7 +46,10 @@ public sealed class SqlServerMigrationRunner : IMigrationRunner
         await using var connection = new SqlConnection(connectionString);
         await connection.OpenAsync(cancellationToken);
 
-        await using var command = new SqlCommand(sql, connection);
+        await using var command = new SqlCommand(sql, connection)
+        {
+            CommandTimeout = 30
+        };
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
 
         while (await reader.ReadAsync(cancellationToken))
@@ -68,12 +75,15 @@ public sealed class SqlServerMigrationRunner : IMigrationRunner
         await using var connection = new SqlConnection(connectionString);
         await connection.OpenAsync(cancellationToken);
 
-        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(
+            IsolationLevel.Serializable, 
+            cancellationToken);
 
         try
         {
             await using (var applyCommand = new SqlCommand(sql, connection, (SqlTransaction)transaction))
             {
+                applyCommand.CommandTimeout = 300; // 5 minutos para migraciones
                 await applyCommand.ExecuteNonQueryAsync(cancellationToken);
             }
 
@@ -84,7 +94,8 @@ public sealed class SqlServerMigrationRunner : IMigrationRunner
 
             await using (var historyCommand = new SqlCommand(insertHistorySql, connection, (SqlTransaction)transaction))
             {
-                historyCommand.Parameters.AddWithValue("@migrationId", migrationId);
+                historyCommand.CommandTimeout = 30;
+                historyCommand.Parameters.Add("@migrationId", SqlDbType.NVarChar, 255).Value = migrationId;
                 await historyCommand.ExecuteNonQueryAsync(cancellationToken);
             }
 

@@ -50,7 +50,7 @@ internal static class MigrateAddCommand
 
         command.SetAction(async (parseResult, cancellationToken) =>
         {
-            var projectFile = new FrapperProjectFileLoader().LoadOrThrow();
+            var projectFile = await new FrapperProjectFileLoader().LoadOrThrowAsync();
 
             var migrationName = parseResult.GetValue(MigrationNameArgument) ?? string.Empty;
             var snapshotPath = parseResult.GetValue(SnapshotOption) ?? projectFile.Snapshot;
