@@ -23,13 +23,25 @@ public sealed class SchemaSnapshotSerializer : ISchemaSnapshotSerializer
 
     public DatabaseSchema Deserialize(string json)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(json);
-
-        var document = JsonSerializer.Deserialize<SchemaSnapshotDocument>(json, JsonOptions)
-            ?? throw new InvalidOperationException("Snapshot JSON could not be deserialized.");
-
+        const int MaxJsonSize = 50 * 1024 * 1024; // 50MB
+        
+        if (json.Length > MaxJsonSize)
+            throw new ArgumentException($"JSON too large: {json.Length} bytes");
+        
+        SchemaSnapshotDocument? document;
+        try 
+        {
+            document = JsonSerializer.Deserialize<SchemaSnapshotDocument>(json, JsonOptions);
+        }
+        catch (JsonException ex)
+        {
+            throw new InvalidOperationException("Invalid snapshot JSON format", ex);
+        }
+        
+        if (document == null)
+            throw new InvalidOperationException("Snapshot JSON is null");
+            
         ValidateDocument(document);
-
         return SchemaSnapshotMapper.ToDomain(document);
     }
 
