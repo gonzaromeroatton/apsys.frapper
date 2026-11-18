@@ -1,6 +1,7 @@
 using Frapper.Cli.Configuration;
 using Frapper.Core.Abstractions;
 using Frapper.Core.Snapshot;
+using System.Security;
 
 namespace Frapper.Cli.Commands.Snapshot;
 
@@ -44,11 +45,13 @@ internal sealed class SnapshotHandler
             var schema = await _schemaReader.ReadAsync(connectionString, cancellationToken);
             var json = _serializer.Serialize(schema);
 
+            outPath = ValidateAndNormalizePath(outPath);
             EnsureDirectoryExists(outPath);
             await File.WriteAllTextAsync(outPath, json, cancellationToken);
 
             if (!string.IsNullOrWhiteSpace(baseOutPath))
             {
+                baseOutPath = ValidateAndNormalizePath(baseOutPath);
                 EnsureDirectoryExists(baseOutPath);
                 await File.WriteAllTextAsync(baseOutPath, json, cancellationToken);
             }
@@ -82,5 +85,16 @@ internal sealed class SnapshotHandler
         {
             Directory.CreateDirectory(directory);
         }
+    }
+
+    private static string ValidateAndNormalizePath(string path)
+    {
+        var fullPath = Path.GetFullPath(path);
+        var currentDir = Directory.GetCurrentDirectory();
+
+        if (!fullPath.StartsWith(currentDir, StringComparison.OrdinalIgnoreCase))
+            throw new SecurityException($"Path traversal detected: {path}");
+
+        return fullPath;
     }
 }

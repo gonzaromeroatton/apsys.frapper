@@ -1,13 +1,12 @@
 using System.Text.Json;
 using Frapper.Cli.Commands.Snapshot;
 using Frapper.Cli.Configuration;
+using Frapper.Core;
 
 namespace Frapper.Cli.Commands.Init;
 
 internal sealed class InitHandler
 {
-    private const string ConfigFileName = "frapper.config.json";
-
     private readonly FrapperConfiguration _configuration;
     private readonly SnapshotHandler _snapshotHandler;
 
@@ -52,16 +51,11 @@ internal sealed class InitHandler
 
         try
         {
-            if (File.Exists(ConfigFileName))
-            {
-                await Console.Error.WriteLineAsync($"Error: ya existe '{ConfigFileName}' en el directorio actual.");
-                return 2;
-            }
-
             _configuration.RequireConnectionString(rawConnection);
 
             Directory.CreateDirectory(migrationsPath);
 
+            // Escribir config UNA SOLA VEZ con protección TOCTOU
             await WriteConfigFileAsync(
                 rawConnection,
                 migrationsPath,
@@ -84,7 +78,7 @@ internal sealed class InitHandler
             await EnsureMigrationsReadmeAsync(migrationsPath, cancellationToken);
 
             Console.WriteLine("Proyecto Frapper inicializado correctamente.");
-            Console.WriteLine($"Config: {Path.GetFullPath(ConfigFileName)}");
+            Console.WriteLine($"Config: {Path.GetFullPath(FrapperConstants.ConfigFileName)}");
             Console.WriteLine($"Base snapshot: {Path.GetFullPath(baseSnapshotPath)}");
             Console.WriteLine($"Desired snapshot: {Path.GetFullPath(snapshotPath)}");
             Console.WriteLine($"Migrations: {Path.GetFullPath(migrationsPath)}");
@@ -115,12 +109,22 @@ internal sealed class InitHandler
             Snapshot = snapshotPath
         };
 
-        var json = JsonSerializer.Serialize(config, new JsonSerializerOptions
-        {
-            WriteIndented = true
-        });
+        var options = new JsonSerializerOptions { WriteIndented = true };
 
-        await File.WriteAllTextAsync(ConfigFileName, json, cancellationToken);
+        try
+        {
+            await using var stream = new FileStream(
+                FrapperConstants.ConfigFileName,
+                FileMode.CreateNew,  // Falla si existe
+                FileAccess.Write,
+                FileShare.None);
+
+            await JsonSerializer.SerializeAsync(stream, config, options, cancellationToken);
+        }
+        catch (IOException ex) when (ex.HResult == -2147024816) // ERROR_FILE_EXISTS
+        {
+            throw new InvalidOperationException($"Ya existe '{FrapperConstants.ConfigFileName}' en el directorio actual.", ex);
+        }
     }
 
     private static async Task EnsureMigrationsReadmeAsync(

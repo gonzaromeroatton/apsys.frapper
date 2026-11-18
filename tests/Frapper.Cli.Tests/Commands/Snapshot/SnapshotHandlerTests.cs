@@ -13,7 +13,7 @@ public sealed class SnapshotHandlerTests
     [Fact]
     public async Task RunAsync_ShouldWriteSnapshotAndBaseSnapshot()
     {
-        var tempDirectory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        var tempDirectory = Path.Combine(Directory.GetCurrentDirectory(), "tmp-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(tempDirectory);
 
         try
@@ -56,7 +56,7 @@ public sealed class SnapshotHandlerTests
     [Fact]
     public async Task RunAsync_ShouldReturnOne_WhenConnectionCannotBeResolved()
     {
-        var tempDirectory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        var tempDirectory = Path.Combine(Directory.GetCurrentDirectory(), "tmp-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(tempDirectory);
 
         try
